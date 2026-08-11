@@ -1,0 +1,22 @@
+# Python / Virtual Environment
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Django local database & files
+db.sqlite3
+media/
+staticfiles/
+*.log
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# IDE specific files
+.vscode/
+.idea/
+.DS_Store
+desktop.ini
