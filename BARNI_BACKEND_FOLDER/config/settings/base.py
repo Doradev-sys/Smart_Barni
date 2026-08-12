@@ -19,6 +19,14 @@ INSTALLED_APPS = [
 
     # Local apps
     'apps.accounts',
+    'apps.branches',
+    'apps.menu',
+    'apps.inventory',
+    'apps.alerts',
+    'apps.audit',
+    'apps.orders',
+    'apps.payments',
+    
 ]
 
 MIDDLEWARE = [
@@ -74,3 +82,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Custom User Model
 AUTH_USER_MODEL = 'accounts.User'
+
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
