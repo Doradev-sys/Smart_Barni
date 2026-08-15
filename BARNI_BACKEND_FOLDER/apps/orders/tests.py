@@ -9,24 +9,23 @@ from apps.branches.models import Branch, DiningTable
 from apps.inventory.models import Ingredient, RecipeBOM, StockTransaction
 from apps.menu.models import Category, MenuItem
 from apps.payments.models import Payment, PaymentProof
-
+import io
+from PIL import Image
 User = get_user_model()
 
+def _make_one_pixel_png():
+    buffer = io.BytesIO()
+    Image.new("RGB", (1, 1), color="white").save(buffer, format="PNG")
+    return buffer.getvalue()
 
-ONE_PIXEL_PNG = (
-    b"\x89PNG\r\n\x1a\n"
-    b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
-    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-    b"\x00\x00\x00\x0dIDAT\x08\xd7c\xf8\xcf\xc0\xf0\x1f\x00\x05\x00\x01\xff"
-    b"\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`\x82"
-)
+ONE_PIXEL_PNG = _make_one_pixel_png()
 
 
 class WaiterOrderFlowTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        waiter_role = Role.objects.create(role_name="WAITER")
-        self.admin_role = Role.objects.create(role_name="SYSTEM_ADMIN")
+        waiter_role, _ = Role.objects.get_or_create(role_name="WAITER")
+        self.admin_role, _ = Role.objects.get_or_create(role_name="SYSTEM_ADMIN")
         self.waiter = User.objects.create_user(
             username="waiter1", password="Pass12345!", role=waiter_role, full_name="Lema", branch=None
         )
@@ -37,6 +36,7 @@ class WaiterOrderFlowTests(TestCase):
         self.waiter.branch = self.branch
         self.waiter.save(update_fields=["branch"])
         self.table = DiningTable.objects.create(branch=self.branch, table_number="T1", capacity=4)
+        self.table2 = DiningTable.objects.create(branch=self.branch, table_number="T2", capacity=4)
         self.category = Category.objects.create(name="Food", meal_period="ALL_DAY")
         self.item = MenuItem.objects.create(
             category=self.category, name="Burger", selling_price=Decimal("200.00"), kitchen_station="HOT"
@@ -48,12 +48,13 @@ class WaiterOrderFlowTests(TestCase):
         RecipeBOM.objects.create(item=self.item, ingredient=self.ingredient, required_qty=Decimal("1"), unit="pcs")
         self.client.force_authenticate(user=self.waiter)
 
-    def create_order(self):
+    def create_order(self, table=None):
+        table = table or self.table
         return self.client.post(
             "/api/orders/",
             {
                 "branch_id": self.branch.pk,
-                "table_id": self.table.pk,
+                "table_id": table.pk,
                 "items": [{"menu_item_id": self.item.pk, "quantity": "2"}],
             },
             format="json",
@@ -91,6 +92,7 @@ class WaiterOrderFlowTests(TestCase):
             {"method": "CBE_BIRR", "proof_image": SimpleUploadedFile("payment.png", ONE_PIXEL_PNG, content_type="image/png")},
             format="multipart",
         )
+        
         self.assertEqual(response.status_code, 201)
         cancel = self.client.post(f"/api/orders/{order_id}/cancel/")
         self.assertEqual(cancel.status_code, 400)
@@ -186,3 +188,41 @@ class WaiterOrderFlowTests(TestCase):
     def test_low_stock_alert_is_created(self):
         self.create_order()
         self.assertTrue(Alert.objects.filter(ingredient=self.ingredient, alert_type="LOW_STOCK").exists())
+
+    def test_report_issue(self):
+        order_id = self.create_order().data["order_id"]
+        response = self.client.post(
+            f"/api/orders/{order_id}/report-issue/",
+            {"issue_type": "MISSING_ITEM", "description": "No fries in the order."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["issue_type"], "MISSING_ITEM")
+        self.assertEqual(response.data["reported_by"], self.waiter.pk)
+
+    def test_report_issue_blank_description_rejected(self):
+        order_id = self.create_order().data["order_id"]
+        response = self.client.post(
+            f"/api/orders/{order_id}/report-issue/",
+            {"issue_type": "OTHER", "description": "   "},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_report_issue_blocked_on_cancelled_order(self):
+        order_id = self.create_order().data["order_id"]
+        self.client.post(f"/api/orders/{order_id}/cancel/")
+        response = self.client.post(
+            f"/api/orders/{order_id}/report-issue/",
+            {"issue_type": "OTHER", "description": "Test"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_order_summary_totals(self):
+        self.create_order()  # SENT, unpaid — counts toward total_sale, not total_revenue
+        order2_id = self.create_order(table=self.table2).data["order_id"]
+        self.client.post(f"/api/payments/orders/{order2_id}/pay/", {"method": "CASH"}, format="json")
+        response = self.client.get(f"/api/orders/summary/?branch_id={self.branch.pk}")
+        self.assertEqual(response.status_code, 200)
+        self.assertGreater(response.data["total_sale"], response.data["total_revenue"])

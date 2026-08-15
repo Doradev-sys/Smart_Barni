@@ -1,6 +1,6 @@
 from django.core.validators import MinValueValidator
 from django.db import models
-
+from decimal import Decimal
 class Order(models.Model):
     class Status(models.TextChoices):
         OPEN = "OPEN", "Open"
@@ -54,7 +54,7 @@ class OrderItem(models.Model):
     order_item_id = models.BigAutoField(primary_key=True)
     order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="items", db_column="order_id")
     item = models.ForeignKey("menu.MenuItem", on_delete=models.PROTECT, related_name="order_items", db_column="item_id")
-    quantity = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(0.01)])
+    quantity = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     unit_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     line_total = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     prep_status = models.CharField(max_length=20, choices=PrepStatus.choices, default=PrepStatus.QUEUED)
@@ -70,3 +70,28 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"{self.item.name} x {self.quantity}"
+
+
+class OrderIssue(models.Model):
+    class IssueType(models.TextChoices):
+        WRONG_ITEM = "WRONG_ITEM", "Wrong item"
+        MISSING_ITEM = "MISSING_ITEM", "Missing item"
+        LATE_ORDER = "LATE_ORDER", "Late order"
+        CUSTOMER_COMPLAINT = "CUSTOMER_COMPLAINT", "Customer complaint"
+        PAYMENT_ISSUE = "PAYMENT_ISSUE", "Payment issue"
+        OTHER = "OTHER", "Other"
+
+    issue_id = models.BigAutoField(primary_key=True)
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="issues", db_column="order_id")
+    reported_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="reported_issues", db_column="reported_by_id")
+    issue_type = models.CharField(max_length=30, choices=IssueType.choices)
+    description = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "order_issues"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["order", "-created_at"], name="order_issues_order_ts_idx")]
+
+    def __str__(self):
+        return f"Issue #{self.issue_id} on order #{self.order_id} ({self.issue_type})"

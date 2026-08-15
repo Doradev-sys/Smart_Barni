@@ -3,7 +3,7 @@ from .models import Payment, PaymentProof
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ("payment_id", "order", "amount", "method", "status", "paid_at", "processed_by")
+    list_display = ("payment_id", "order", "amount", "method", "status", "paid_at")
     list_filter = ("method", "status")
     search_fields = ("payment_id", "order__order_id", "gateway_ref")
 

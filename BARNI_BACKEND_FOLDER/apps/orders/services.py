@@ -1,11 +1,13 @@
 from decimal import Decimal, ROUND_HALF_UP
 from django.db import transaction
 from django.utils import timezone
+from django.db.models import Sum, Q
+from .models import Order, OrderIssue
 
 from apps.branches.models import DiningTable
 from apps.inventory.services import InsufficientStock, deduct_for_order, reverse_order_stock
 from apps.audit.services import record as audit_record
-from .models import Order
+from .models import Order, OrderItem, OrderIssue
 
 VAT_RATE = Decimal("0.15")
 ACTIVE_TABLE_STATUSES = {Order.Status.OPEN, Order.Status.SENT, Order.Status.IN_PREP, Order.Status.READY, Order.Status.SERVED}
@@ -78,7 +80,6 @@ def receipt_projection(order, request=None):
         "order_timestamp": order.order_timestamp.isoformat(),
         "status": order.status,
     }
-
 
 class OrderService:
     @staticmethod
@@ -222,3 +223,38 @@ class OrderService:
         order.save(update_fields=["status", "closed_at"])
         _release_table_if_free(order.table)
         return order
+def report_order_issue(*, order, reported_by, issue_type, description):
+    if order.status == Order.Status.CANCELLED:
+        raise ValueError("Cannot report an issue on a cancelled order.")
+    return OrderIssue.objects.create(
+        order=order,
+        reported_by=reported_by,
+        issue_type=issue_type,
+        description=description,
+    )
+
+
+def order_summary(*, branch_id=None, date_from=None, date_to=None):
+    date_from = date_from or timezone.localdate()
+    date_to = date_to or date_from
+    qs = Order.objects.filter(
+        order_timestamp__date__gte=date_from,
+        order_timestamp__date__lte=date_to,
+    ).exclude(status=Order.Status.CANCELLED)
+    if branch_id:
+        qs = qs.filter(branch_id=branch_id)
+
+    total_sale = qs.aggregate(total=Sum("total_amount"))["total"] or Decimal("0.00")
+    total_revenue = qs.filter(
+        payments__status="SUCCESS"
+    ).distinct().aggregate(total=Sum("total_amount"))["total"] or Decimal("0.00")
+    # total_revenue counts an order once even if paid via multiple successful payments,
+    # since we're summing order.total_amount, not payment.amount, per matching order.
+
+    return {
+        "total_sale": total_sale,
+        "total_revenue": total_revenue,
+        "order_count": qs.count(),
+        "date_from": date_from,
+        "date_to": date_to,
+    }

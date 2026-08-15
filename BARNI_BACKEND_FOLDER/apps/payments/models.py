@@ -1,10 +1,9 @@
 from django.core.validators import FileExtensionValidator, MinValueValidator
 from django.db import models
-
+from decimal import Decimal
 
 def payment_proof_upload_path(instance, filename):
     return f"payment_proofs/{instance.payment.order_id}/{instance.payment_id}/{filename}"
-
 
 class Payment(models.Model):
     class Method(models.TextChoices):
@@ -25,7 +24,7 @@ class Payment(models.Model):
     order = models.ForeignKey(
         "orders.Order", on_delete=models.PROTECT, related_name="payments", db_column="order_id"
     )
-    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0.01)])
+    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     method = models.CharField(max_length=30, choices=Method.choices)
     gateway_ref = models.CharField(max_length=100, blank=True, null=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)

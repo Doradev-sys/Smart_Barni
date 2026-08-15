@@ -2,7 +2,7 @@ from decimal import Decimal
 from rest_framework import serializers
 from apps.branches.models import Branch, DiningTable
 from apps.menu.models import MenuItem
-from .models import Order, OrderItem
+from .models import Order, OrderItem, OrderIssue
 
 class OrderItemInputSerializer(serializers.Serializer):
     menu_item_id = serializers.IntegerField(min_value=1)
@@ -36,6 +36,16 @@ class CreateWaiterOrderSerializer(serializers.Serializer):
         attrs["branch"] = branch
         attrs["table"] = table
         return attrs
+
+    def create(self, validated_data):
+        from .services import OrderService
+        return OrderService.create_waiter_order(
+            waiter=self.context["request"].user,
+            branch=validated_data["branch"],
+            table=validated_data["table"],
+            items=validated_data["items"],
+            notes=validated_data.get("notes", ""),
+        )
 
 class OrderItemSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(source="pk", read_only=True)
@@ -83,3 +93,47 @@ class OrderSerializer(serializers.ModelSerializer):
         if obj.order_type == Order.OrderType.DELIVERY and obj.customer_id:
             return "ONLINE"
         return "WAITER" if obj.order_type == Order.OrderType.DINE_IN else obj.order_type
+
+class ReportIssueSerializer(serializers.Serializer):
+    issue_type = serializers.ChoiceField(choices=OrderIssue.IssueType.choices)
+    description = serializers.CharField(allow_blank=False, trim_whitespace=True)
+
+    def validate_description(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Description cannot be empty.")
+        return value.strip()
+
+
+class OrderIssueSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source="pk", read_only=True)
+    reported_by_name = serializers.CharField(source="reported_by.full_name", read_only=True)
+    class Meta:
+        model = OrderIssue
+        fields = ["id", "issue_id", "order", "reported_by", "reported_by_name", "issue_type", "description", "created_at"]
+        read_only_fields = fields
+
+
+class OrderSummarySerializer(serializers.Serializer):
+    total_sale = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_revenue = serializers.DecimalField(max_digits=14, decimal_places=2)
+    order_count = serializers.IntegerField()
+    date_from = serializers.DateField()
+    date_to = serializers.DateField()
+
+class OrderRowSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source="pk", read_only=True)
+    table_number = serializers.CharField(source="table.table_number", read_only=True, default=None)
+    waiter_name = serializers.CharField(source="waiter.full_name", read_only=True, default=None)
+    ui_status = serializers.SerializerMethodField()
+    is_paid = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Order
+        fields = ["id", "order_id", "table_number", "waiter_name", "order_type", "ui_status", "total_amount", "order_timestamp", "is_paid"]
+        read_only_fields = fields
+
+    def get_is_paid(self, obj):
+        return getattr(obj, "_is_paid_cache", None) or OrderSerializer(context=self.context).get_is_paid(obj)
+
+    def get_ui_status(self, obj):
+        return OrderSerializer(context=self.context).get_ui_status(obj)

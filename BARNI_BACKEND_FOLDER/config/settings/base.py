@@ -11,24 +11,24 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
-    # Third-party apps
-    'rest_framework',
-    'rest_framework.authtoken',
-    'corsheaders',
 
-    # Local apps
+    'corsheaders',
+    'rest_framework',
+
     'apps.accounts',
     'apps.branches',
     'apps.menu',
     'apps.inventory',
+    'apps.payments',
     'apps.alerts',
     'apps.audit',
+    'apps.kitchen',
+    'apps.finance',
+    'apps.wastage',
+    'apps.delivery',
+    'apps.reports',
     'apps.orders',
-    'apps.payments',
-    
 ]
-
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',

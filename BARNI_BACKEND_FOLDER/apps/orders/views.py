@@ -3,10 +3,14 @@ from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import Order
 from .permissions import IsWaitstaff
-from .serializers import CreateWaiterOrderSerializer, OrderSerializer
-from .services import OrderService, receipt_projection
+from .serializers import (
+    CreateWaiterOrderSerializer, OrderSerializer, OrderRowSerializer,
+    ReportIssueSerializer, OrderIssueSerializer, OrderSummarySerializer,
+)
+from .services import OrderService, receipt_projection, report_order_issue, order_summary
+from .models import Order, OrderIssue
+
 
 class OrderListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated, IsWaitstaff]
@@ -94,3 +98,26 @@ def receipt_view(request, pk):
     if order.order_type == Order.OrderType.DINE_IN and order.waiter_id != request.user.id:
         return Response({"detail": "You can only view receipts for your own waiter orders."}, status=403)
     return Response(receipt_projection(order, request))
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsWaitstaff])
+def order_summary_view(request):
+    branch_id = request.query_params.get("branch_id") or request.user.branch_id
+    date_from = request.query_params.get("date_from")
+    date_to = request.query_params.get("date_to")
+    data = order_summary(branch_id=branch_id, date_from=date_from, date_to=date_to)
+    return Response(OrderSummarySerializer(data).data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsWaitstaff])
+def report_issue_view(request, pk):
+    order = Order.objects.filter(pk=pk).first()
+    if not order:
+        return Response({"detail": "Order not found."}, status=404)
+    serializer = ReportIssueSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    try:
+        issue = report_order_issue(order=order, reported_by=request.user, **serializer.validated_data)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    return Response(OrderIssueSerializer(issue).data, status=status.HTTP_201_CREATED)
