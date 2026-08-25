@@ -1,13 +1,10 @@
 from .base import *
 
-# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
+SECRET_KEY = 'django-insecure-dev-key-change-in-production'
+ALLOWED_HOSTS = ['*']
+CORS_ALLOW_ALL_ORIGINS = True
 
-SECRET_KEY = 'django-insecure-development-key-change-me'
-
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
-
-# Database for development (SQLite)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -15,5 +12,21 @@ DATABASES = {
     }
 }
 
-# Allow all origins for local React development
-CORS_ALLOW_ALL_ORIGINS = True
+# Cache — LocMemCache for dev, switch to RedisCache in production
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'barni-cache-dev',
+        'TIMEOUT': 30,
+        'OPTIONS': {
+            'MAX_ENTRIES': 500,
+        }
+    }
+}
+
+# Session cache
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'default'
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'

@@ -3,12 +3,12 @@ from django.db import models
 
 class User(AbstractUser):
     ROLE_CHOICES = (
-        ('Cashier', 'Cashier'),
-        ('Waitstaff', 'Waitstaff'),
+        ('Admin', 'Admin'),
+        ('Waiter', 'Waiter'),
         ('Kitchen', 'Kitchen'),
-        ('Manager', 'Manager'),
+        ('Customer', 'Customer'),
     )
-    role = models.CharField(max_length=50, choices=ROLE_CHOICES, default='Cashier')
+    role = models.CharField(max_length=50, choices=ROLE_CHOICES, default='Waiter')
 
     def __str__(self):
         return f"{self.username} ({self.role})"
@@ -16,6 +16,7 @@ class User(AbstractUser):
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
+    profile_picture = models.ImageField(upload_to='profile_pics/', blank=True, null=True)
 
     def __str__(self):
         return f"Profile for {self.user.username}"
