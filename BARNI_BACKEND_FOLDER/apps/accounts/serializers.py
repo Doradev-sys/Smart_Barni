@@ -1,64 +1,53 @@
 from rest_framework import serializers
-from django.contrib.auth import get_user_model, authenticate
+from django.contrib.auth import authenticate, get_user_model
+from .models import CustomerAddress
 
 User = get_user_model()
 
+
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
-    phone = serializers.SerializerMethodField()
-    profile_picture = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'role', 'full_name', 'phone', 'profile_picture']
+        fields = ['id', 'username', 'email', 'role', 'first_name', 'last_name', 'full_name']
+        read_only_fields = ['id', 'username', 'role']
 
     def get_full_name(self, obj):
-        full = f"{obj.first_name} {obj.last_name}".strip()
-        return full or obj.username
-
-    def get_phone(self, obj):
-        if hasattr(obj, 'profile') and obj.profile:
-            return obj.profile.phone_number or ''
-        return ''
-
-    def get_profile_picture(self, obj):
-        if hasattr(obj, 'profile') and obj.profile and obj.profile.profile_picture:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.profile.profile_picture.url)
-            return obj.profile.profile_picture.url
-        return ''
+        return obj.get_full_name() or obj.username
 
 
-class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
-    full_name = serializers.CharField(required=False, default='')
-    father_name = serializers.CharField(required=False, default='')
-    phone = serializers.CharField(required=False, default='')
+class CustomerRegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'role', 'full_name', 'father_name', 'phone']
+        fields = ['username', 'email', 'password', 'confirm_password', 'first_name', 'last_name']
+        extra_kwargs = {
+            'email': {'required': True},
+            'first_name': {'required': False, 'allow_blank': True},
+            'last_name': {'required': False, 'allow_blank': True},
+        }
+
+    def validate_email(self, value):
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError('A user with this email already exists.')
+        return value
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['confirm_password']:
+            raise serializers.ValidationError({'confirm_password': 'Passwords do not match.'})
+        return attrs
 
     def create(self, validated_data):
-        full_name = validated_data.pop('full_name', '')
-        father_name = validated_data.pop('father_name', '')
-        phone = validated_data.pop('phone', '')
-        parts = full_name.split(' ', 1)
-        first_name = parts[0] if parts else ''
-        last_name = parts[1] if len(parts) > 1 else ''
-        user = User.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data.get('email', ''),
-            password=validated_data['password'],
-            role=validated_data.get('role', 'Waiter'),
-            first_name=first_name,
-            last_name=last_name,
+        validated_data.pop('confirm_password')
+        password = validated_data.pop('password')
+        return User.objects.create_user(
+            password=password,
+            role=User.Role.CUSTOMER,
+            **validated_data,
         )
-        if phone:
-            from .models import Profile
-            Profile.objects.create(user=user, phone_number=phone)
-        return user
 
 
 class LoginSerializer(serializers.Serializer):
@@ -66,35 +55,44 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
     def validate(self, data):
-        user = authenticate(**data)
-        if user and user.is_active:
-            return user
-        raise serializers.ValidationError("Invalid credentials")
+        user = authenticate(username=data['username'], password=data['password'])
+        if not user or not user.is_active:
+            raise serializers.ValidationError('Invalid credentials.')
+        return user
 
 
-class CustomerLoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
-    password = serializers.CharField(write_only=True)
-
+class CustomerLoginSerializer(LoginSerializer):
     def validate(self, data):
-        username = data['username']
-        password = data['password']
-        try:
-            user = User.objects.get(username=username)
-            if not user.check_password(password):
-                raise serializers.ValidationError("Incorrect password.")
-            if user.role != 'Customer':
-                raise serializers.ValidationError("This account is not a customer account.")
-            return user
-        except User.DoesNotExist:
-            user = User.objects.create_user(
-                username=username,
-                password=password,
-                role='Customer',
-                first_name=username,
-            )
-            return user
+        user = super().validate(data)
+        if user.role != User.Role.CUSTOMER:
+            raise serializers.ValidationError('This account is not a customer account.')
+        return user
 
 
-class LogoutSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
+class CustomerProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['email', 'first_name', 'last_name']
+
+    def validate_email(self, value):
+        user = self.instance
+        if User.objects.filter(email__iexact=value).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError('A user with this email already exists.')
+        return value
+
+
+class CustomerAddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomerAddress
+        fields = [
+            'id', 'label', 'recipient_name', 'phone', 'address_line',
+            'city', 'area', 'landmark', 'is_default',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated and request.user.role != User.Role.CUSTOMER:
+            raise serializers.ValidationError('Only customer accounts can manage customer addresses.')
+        return attrs

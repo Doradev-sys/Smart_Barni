@@ -1,16 +1,8 @@
 from rest_framework.permissions import BasePermission
-
 from .models import User
 
 
 class HasRole(BasePermission):
-    """
-    Base class — subclass and set `allowed_roles` rather than instantiating
-    directly. Keeps every other app's permission checks to one line, e.g.:
-
-        permission_classes = [IsAdminOrKitchenHead]
-    """
-
     allowed_roles = ()
 
     def has_permission(self, request, view):
@@ -25,12 +17,12 @@ class IsAdmin(HasRole):
     allowed_roles = (User.Role.ADMIN,)
 
 
-class IsSystemAdmin(HasRole):
-    allowed_roles = (User.Role.SYSTEM_ADMIN,)
+class IsSystemAdmin(IsAdmin):
+    pass
 
 
-class IsAdminOrSystemAdmin(HasRole):
-    allowed_roles = (User.Role.ADMIN, User.Role.SYSTEM_ADMIN)
+class IsAdminOrSystemAdmin(IsAdmin):
+    pass
 
 
 class IsWaiter(HasRole):
@@ -38,19 +30,19 @@ class IsWaiter(HasRole):
 
 
 class IsKitchenHead(HasRole):
-    allowed_roles = (User.Role.KITCHEN_HEAD,)
+    allowed_roles = (User.Role.KITCHEN,)
 
 
-class IsKitchenStaff(HasRole):
-    allowed_roles = (User.Role.KITCHEN_STAFF,)
+class IsKitchenStaff(IsKitchenHead):
+    pass
 
 
 class IsAdminOrKitchenHead(HasRole):
-    allowed_roles = (User.Role.ADMIN, User.Role.KITCHEN_HEAD)
+    allowed_roles = (User.Role.ADMIN, User.Role.KITCHEN)
 
 
-class IsKitchenHeadOrStaff(HasRole):
-    allowed_roles = (User.Role.KITCHEN_HEAD, User.Role.KITCHEN_STAFF)
+class IsKitchenHeadOrStaff(IsKitchenHead):
+    pass
 
 
 class IsDeliveryDriver(HasRole):
@@ -62,7 +54,5 @@ class IsCustomer(HasRole):
 
 
 class IsOwnerOfObject(BasePermission):
-    """Object-level check: user can only view/edit their own record (e.g. profile)."""
-
     def has_object_permission(self, request, view, obj):
-        return getattr(obj, "user_id", None) == request.user.id or obj == request.user
+        return getattr(obj, 'user_id', None) == request.user.id or getattr(obj, 'customer_id', None) == request.user.id or obj == request.user
