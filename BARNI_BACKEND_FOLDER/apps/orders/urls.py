@@ -1,3 +1,8 @@
+# apps/orders/urls.py
+# ============================================================================
+# COMPLETE URLS FILE WITH PAYMENT URLS
+# ============================================================================
+
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
@@ -5,6 +10,12 @@ from .views import (
     place_order_view, customer_place_order_view,
     accept_order_view, cancel_order_view, pay_order_view,
     customer_orders_view, customer_order_count_view, tables_view,
+    customer_create_order_view,
+    customer_order_detail_view,
+    customer_orders_history_view,
+    customer_cancel_order_view,
+    customer_pay_order_view,          # ADDED
+    customer_payment_history_view,    # ADDED
 )
 
 router = DefaultRouter()
@@ -13,6 +24,7 @@ router.register('receipts', ReceiptViewSet)
 router.register('tables', TableViewSet)
 
 urlpatterns = [
+    # Existing URLs
     path('', include(router.urls)),
     path('place/', place_order_view, name='place-order'),
     path('customer/place/', customer_place_order_view, name='customer-place-order'),
@@ -22,4 +34,14 @@ urlpatterns = [
     path('<uuid:order_id>/cancel/', cancel_order_view, name='cancel-order'),
     path('<uuid:order_id>/pay/', pay_order_view, name='pay-order'),
     path('tables/', tables_view, name='tables-list'),
+    
+    # Customer Order URLs
+    path('customer/orders/create/', customer_create_order_view, name='customer-order-create'),
+    path('customer/orders/', customer_orders_history_view, name='customer-orders-history'),
+    path('customer/orders/<uuid:order_id>/', customer_order_detail_view, name='customer-order-detail'),
+    path('customer/orders/<uuid:order_id>/cancel/', customer_cancel_order_view, name='customer-order-cancel'),
+    
+    # Payment URLs (NEW)
+    path('customer/orders/<uuid:order_id>/pay/', customer_pay_order_view, name='customer-order-pay'),
+    path('customer/payments/', customer_payment_history_view, name='customer-payment-history'),
 ]

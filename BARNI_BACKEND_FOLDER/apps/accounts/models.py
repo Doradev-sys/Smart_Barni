@@ -2,6 +2,17 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 class User(AbstractUser):
+    # ADD THIS INNER CLASS
+    class Role:
+        ADMIN = 'Admin'
+        WAITER = 'Waiter'
+        KITCHEN = 'Kitchen'
+        CUSTOMER = 'Customer'
+        SYSTEM_ADMIN = 'Admin'
+        KITCHEN_HEAD = 'Kitchen'
+        KITCHEN_STAFF = 'Kitchen'
+        DELIVERY_DRIVER = 'Customer'
+
     ROLE_CHOICES = (
         ('Admin', 'Admin'),
         ('Waiter', 'Waiter'),
