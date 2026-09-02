@@ -1,16 +1,9 @@
-# apps/orders/serializers.py
-# ============================================================================
-# COMPLETE SERIALIZERS FILE
-# ============================================================================
-
 from rest_framework import serializers
 from .models import Order, Receipt, Table, OrderItem
 from apps.menu.serializers import MenuItemLightSerializer
 
 
-# ============================================================================
-# NEW SERIALIZERS FOR CUSTOMER ORDERS
-# ============================================================================
+
 
 class OrderItemSerializer(serializers.ModelSerializer):
     """Serializer for OrderItem model"""
@@ -89,9 +82,7 @@ class CustomerOrderSerializer(serializers.ModelSerializer):
         ]
 
 
-# ============================================================================
-# EXISTING SERIALIZERS (UPDATED)
-# ============================================================================
+
 
 class OrderSerializer(serializers.ModelSerializer):
     """Serializer for Order model"""

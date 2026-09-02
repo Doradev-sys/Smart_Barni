@@ -1,8 +1,3 @@
-# apps/orders/urls.py
-# ============================================================================
-# COMPLETE URLS FILE WITH PAYMENT URLS
-# ============================================================================
-
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (

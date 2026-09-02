@@ -1,7 +1,3 @@
-# apps/orders/views.py
-# ============================================================================
-# COMPLETE VIEWS FILE WITH PAYMENT VIEWS
-# ============================================================================
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, permission_classes
@@ -353,9 +349,7 @@ def tables_view(request):
     return Response(serializer.data)
 
 
-# ============================================================================
-# ENHANCED CUSTOMER ORDER VIEWS
-# ============================================================================
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsCustomer])
@@ -532,9 +526,6 @@ def customer_cancel_order_view(request, order_id):
     return Response(CustomerOrderSerializer(order).data)
 
 
-# ============================================================================
-# PAYMENT VIEWS (NEW)
-# ============================================================================
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsCustomer])

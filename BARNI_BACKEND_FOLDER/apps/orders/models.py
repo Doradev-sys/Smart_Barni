@@ -1,8 +1,3 @@
-# apps/orders/models.py
-# ============================================================================
-# COMPLETE ORDERS MODELS FILE
-# ============================================================================
-
 from django.db import models
 from django.conf import settings
 from apps.menu.models import MenuItem

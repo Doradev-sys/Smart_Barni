@@ -1,8 +1,3 @@
-# apps/delivery/urls.py
-# ============================================================================
-# COMPLETE DELIVERY URLS WITH CUSTOMER TRACKING
-# ============================================================================
-
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
