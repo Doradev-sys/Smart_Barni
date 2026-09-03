@@ -3,6 +3,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+
 from django.db import transaction
 from django.db.models import Q
 from django.core.cache import cache
@@ -16,6 +17,10 @@ from apps.accounts.permissions import IsCustomer
 from apps.payments.serializers import PaymentSerializer
 import random
 import string
+from django.db.models import Sum, Count
+from django.utils import timezone
+from datetime import datetime, timedelta
+from apps.accounts.permissions import IsAdmin
 
 
 # ============================================================================
@@ -180,25 +185,42 @@ def cancel_order_view(request, order_id):
     except Order.DoesNotExist:
         return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
     
+    # Check if order can be cancelled
     if order.status in ['served', 'declined', 'cancelled']:
         return Response(
             {'error': f'Order cannot be cancelled. Current status: {order.status}'},
             status=status.HTTP_400_BAD_REQUEST
         )
     
+    # Check if order was paid and process refund
+    refund_status = None
+    if order.payment_status == 'paid':
+        from apps.payments.models import Payment
+        # Update payment status to refunded
+        Payment.objects.filter(order=order).update(status='refunded')
+        order.payment_status = 'refunded'
+        refund_status = 'refunded'
+    
+    # Update order status
     order.status = 'cancelled'
     order.save()
     
+    # Update kitchen order
     try:
         from apps.kitchen.models import KitchenOrder
         KitchenOrder.objects.filter(order=order).update(status='cancelled')
     except ImportError:
         pass
     
+    # Clear cache
+    from django.core.cache import cache
     cache.delete('kitchen_queue')
     
-    return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
-
+    return Response({
+        'message': 'Order cancelled successfully',
+        'refund_status': refund_status or 'no_refund_needed',
+        'order': OrderSerializer(order).data
+    }, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -626,3 +648,96 @@ def customer_payment_history_view(request):
     
     serializer = PaymentSerializer(payments, many=True)
     return Response(serializer.data)
+
+# ============================================================================
+# DASHBOARD VIEWS
+# ============================================================================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def dashboard_summary_view(request):
+    """
+    Get today's dashboard summary
+    GET /api/orders/admin/dashboard/summary/
+    """
+    today = timezone.now().date()
+    
+    orders_today = Order.objects.filter(created_at__date=today)
+    
+    total_orders = orders_today.count()
+    total_revenue = orders_today.aggregate(total=Sum('total'))['total'] or 0
+    dine_in = orders_today.filter(order_type='dine_in').count()
+    online = orders_today.filter(order_type='delivery').count()
+    declined = orders_today.filter(status='declined').count()
+    kitchen_prepped = orders_today.filter(status='ready').count()
+    
+    return Response({
+        'date': today.isoformat(),
+        'total_orders': total_orders,
+        'total_revenue': float(total_revenue),
+        'dine_in': dine_in,
+        'online': online,
+        'declined': declined,
+        'kitchen_prepped': kitchen_prepped,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def dashboard_hourly_view(request):
+    """
+    Get hourly activity
+    GET /api/orders/admin/dashboard/hourly/
+    """
+    today = timezone.now().date()
+    current_hour = timezone.now().hour
+    
+    hourly_data = []
+    
+    for hour in range(6, current_hour + 1):
+        start = datetime.combine(today, datetime.min.time().replace(hour=hour))
+        start = timezone.make_aware(start)
+        end = start + timedelta(hours=1)
+        
+        orders = Order.objects.filter(created_at__range=[start, end])
+        
+        hourly_data.append({
+            'hour': f"{hour}:00",
+            'orders': orders.count(),
+            'revenue': float(orders.aggregate(total=Sum('total'))['total'] or 0),
+        })
+    
+    return Response(hourly_data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def dashboard_top_performance_view(request):
+    """
+    Get top performance data
+    GET /api/orders/admin/dashboard/top-performance/
+    """
+    today = timezone.now().date()
+    
+    orders_today = Order.objects.filter(created_at__date=today)
+    
+    # Top Waiter
+    top_waiter = orders_today.filter(
+        waiter__isnull=False
+    ).values('waiter__username').annotate(
+        total_orders=Count('id'),
+        total_revenue=Sum('total')
+    ).order_by('-total_revenue').first()
+    
+    # Top Menu Items
+    top_items = OrderItem.objects.filter(
+        order__created_at__date=today
+    ).values('menu_item__name').annotate(
+        total_quantity=Sum('quantity'),
+        total_revenue=Sum('subtotal')
+    ).order_by('-total_quantity')[:5]
+    
+    return Response({
+        'top_waiter': top_waiter,
+        'top_items': list(top_items),
+    })

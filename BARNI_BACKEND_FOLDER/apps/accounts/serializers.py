@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
+from .models import Profile 
 
 User = get_user_model()
 
@@ -98,3 +99,81 @@ class CustomerLoginSerializer(serializers.Serializer):
 
 class LogoutSerializer(serializers.Serializer):
     refresh = serializers.CharField()
+
+# ============================================================================
+# PROFILE SERIALIZERS
+# ============================================================================
+
+class ProfileSerializer(serializers.ModelSerializer):
+    """Profile serializer for CRUD"""
+    username = serializers.CharField(source='user.username', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+    role = serializers.CharField(source='user.role', read_only=True)
+    
+    class Meta:
+        model = Profile
+        fields = ['id', 'user', 'username', 'email', 'role', 'phone_number', 
+                  'father_name', 'profile_picture', 'created_at']
+        read_only_fields = ['id', 'user', 'created_at']
+
+
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    """Profile update serializer"""
+    first_name = serializers.CharField(required=False)
+    last_name = serializers.CharField(required=False)
+    
+    class Meta:
+        model = Profile
+        fields = ['phone_number', 'father_name', 'profile_picture', 'first_name', 'last_name']
+    
+    def update(self, instance, validated_data):
+        user = instance.user
+        if 'first_name' in validated_data:
+            user.first_name = validated_data.pop('first_name')
+        if 'last_name' in validated_data:
+            user.last_name = validated_data.pop('last_name')
+        user.save()
+        return super().update(instance, validated_data)
+
+
+class UserProfileHistorySerializer(serializers.ModelSerializer):
+    """User profile with history"""
+    profile = ProfileSerializer(read_only=True)
+    order_count = serializers.SerializerMethodField()
+    total_spent = serializers.SerializerMethodField()
+    recent_orders = serializers.SerializerMethodField()
+    login_history = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'role', 'first_name', 'last_name', 
+                  'is_active', 'date_joined', 'profile', 'order_count', 
+                  'total_spent', 'recent_orders', 'login_history']
+    
+    def get_order_count(self, obj):
+        return obj.customer_orders.count()
+    
+    def get_total_spent(self, obj):
+        from django.db.models import Sum
+        from apps.orders.models import Order
+        result = Order.objects.filter(customer=obj, payment_status='paid').aggregate(
+            total=Sum('total')
+        )
+        return result['total'] or 0
+    
+    def get_recent_orders(self, obj):
+        from apps.orders.models import Order
+        from apps.orders.serializers import OrderSerializer
+        orders = Order.objects.filter(customer=obj).order_by('-created_at')[:5]
+        return OrderSerializer(orders, many=True).data
+    
+    def get_login_history(self, obj):
+        from .models import LoginAuditLog
+        logs = LoginAuditLog.objects.filter(user=obj).order_by('-login_time')[:10]
+        return [
+            {
+                'login_time': log.login_time,
+                'ip_address': log.ip_address
+            }
+            for log in logs
+        ]

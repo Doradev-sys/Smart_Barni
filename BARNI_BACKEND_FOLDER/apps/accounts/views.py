@@ -1,12 +1,15 @@
+from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
-from .serializers import RegisterSerializer, LoginSerializer, CustomerLoginSerializer, UserSerializer, LogoutSerializer
+from .serializers import (RegisterSerializer, LoginSerializer, CustomerLoginSerializer, UserSerializer, LogoutSerializer, ProfileSerializer, ProfileUpdateSerializer, UserProfileHistorySerializer
+)
+from .permissions import IsCustomer, IsAdmin
 
-
+User = get_user_model()
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_view(request):
@@ -83,4 +86,94 @@ def upload_profile_picture_view(request):
     profile.profile_picture = pic
     profile.save()
     serializer = UserSerializer(request.user, context={'request': request})
+    return Response(serializer.data)
+
+# ============================================================================
+# PROFILE VIEWS
+# ============================================================================
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def profile_detail_view(request):
+    """
+    Get or update current user's profile
+    GET /api/auth/profile/
+    PATCH /api/auth/profile/
+    """
+    profile = request.user.profile
+    
+    if request.method == 'GET':
+        serializer = ProfileSerializer(profile)
+        return Response(serializer.data)
+    
+    # PATCH - Update profile
+    serializer = ProfileUpdateSerializer(profile, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(ProfileSerializer(profile).data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def profile_history_view(request):
+    """
+    Get profile with full history (orders, payments, logins)
+    GET /api/auth/profile/history/
+    """
+    user = request.user
+    serializer = UserProfileHistorySerializer(user)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def admin_user_profile_view(request, user_id):
+    """
+    Admin view any user's profile with history
+    GET /api/auth/admin/profile/{user_id}/
+    """
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'detail': 'User not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    serializer = UserProfileHistorySerializer(user)
+    return Response(serializer.data)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def admin_update_user_view(request, user_id):
+    """
+    Admin update user profile
+    PATCH /api/auth/admin/profile/{user_id}/update/
+    """
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'detail': 'User not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # Update user fields
+    if 'role' in request.data:
+        user.role = request.data['role']
+    if 'is_active' in request.data:
+        user.is_active = request.data['is_active']
+    user.save()
+    
+    # Update profile fields
+    profile = user.profile
+    if 'phone_number' in request.data:
+        profile.phone_number = request.data['phone_number']
+    if 'father_name' in request.data:
+        profile.father_name = request.data['father_name']
+    profile.save()
+    
+    serializer = UserProfileHistorySerializer(user)
     return Response(serializer.data)
